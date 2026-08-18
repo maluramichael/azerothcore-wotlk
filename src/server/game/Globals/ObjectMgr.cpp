@@ -1763,14 +1763,19 @@ void ObjectMgr::LoadCreatureModelInfo()
         if (modelInfo.combat_reach < 0.1f)
             modelInfo.combat_reach = DEFAULT_COMBAT_REACH;
 
-        if (CreatureModelDataEntry const* modelData = sCreatureModelDataStore.LookupEntry(creatureDisplay->ModelId))
+        // Guard against custom rows whose DisplayID is absent from CreatureDisplayInfo.dbc
+        // (e.g. module content that expects a client-side DBC patch): creatureDisplay is null there.
+        if (creatureDisplay)
         {
-            for (uint32 i = 0; i < 14; i++)
+            if (CreatureModelDataEntry const* modelData = sCreatureModelDataStore.LookupEntry(creatureDisplay->ModelId))
             {
-                if (modelData->Id == triggerCreatureModelDataID[i])
+                for (uint32 i = 0; i < 14; i++)
                 {
-                    modelInfo.is_trigger = true;
-                    break;
+                    if (modelData->Id == triggerCreatureModelDataID[i])
+                    {
+                        modelInfo.is_trigger = true;
+                        break;
+                    }
                 }
             }
         }
