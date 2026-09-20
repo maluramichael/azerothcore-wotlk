@@ -362,10 +362,38 @@ struct Loot
         roundRobinPlayer.Clear();
         i_LootValidatorRefMgr.clearReferences();
         loot_type = LOOT_NONE;
+
+        lootEveryone = false;
+        everyoneParticipants.clear();
+        everyoneGoldLooted.clear();
+        everyoneReleased.clear();
     }
 
     [[nodiscard]] bool empty() const { return items.empty() && gold == 0; }
-    [[nodiscard]] bool isLooted() const { return gold == 0 && unlootedCount == 0; }
+    [[nodiscard]] bool isLooted() const { return lootEveryone ? IsEveryoneLooted() : (gold == 0 && unlootedCount == 0); }
+
+    // "Loot for everyone" (worldserver.conf: Loot.Everyone.Enable)
+    // Every eligible member of the looting group gets an own, complete copy of this loot: all items are handled like
+    // free-for-all items (looting one never removes it for the others) and the gold is paid out in full to each looter.
+    // Only used for group loot of creature corpses and group loot rule chests, never for personal loot (skinning,
+    // pickpocketing, gathering, fishing, item containers, ...) and never for a lone player.
+    [[nodiscard]] bool IsEveryoneLoot() const { return lootEveryone; }
+    // Switches the loot to "everyone" mode and prepares the copies of all group members in range (used for corpses
+    // without a loot template, the copies of templated loot are prepared by FillLoot)
+    void PrepareEveryoneLoot(Player* lootOwner, WorldObject* lootSource);
+    // Gold the player can still take from this loot (0 if the player already took his copy)
+    [[nodiscard]] uint32 GetGoldFor(Player const* player) const;
+    // Pays out the full gold to the player, other players keep their own copy of it
+    void GiveEveryoneGold(Player* player);
+    // True while the player still has something to take from his copy (or does not have a copy yet)
+    [[nodiscard]] bool HasEveryoneLootFor(Player const* player) const;
+    // Called when the player closes the loot window: a bot that closed its window declined the rest of its copy
+    // (junk, items its loot strategy does not want), that must not keep the corpse from being skinned or removed
+    void OnEveryoneLootReleased(Player const* player);
+    // True when no player that is still able to loot has anything left to take
+    [[nodiscard]] bool IsEveryoneLooted() const;
+    // Collects the loot slots of the player's copy that can still be taken (free-for-all and quest items)
+    void GetLootSlotsFor(Player const* player, std::vector<uint8>& slots) const;
 
     void NotifyItemRemoved(uint8 lootIndex);
     void NotifyQuestItemRemoved(uint8 questIndex);
@@ -382,7 +410,7 @@ struct Loot
     LootItem* LootItemInSlot(uint32 lootslot, Player* player, QuestItem** qitem = nullptr, QuestItem** ffaitem = nullptr, QuestItem** conditem = nullptr);
     uint32 GetMaxSlotInLootFor(Player* player) const;
     [[nodiscard]] bool hasItemForAll() const;
-    bool hasItemFor(Player* player) const;
+    bool hasItemFor(Player const* player) const;
     [[nodiscard]] bool hasOverThresholdItem() const;
     void FillNotNormalLootFor(Player* player);
 
@@ -396,6 +424,12 @@ private:
     QuestItemMap PlayerQuestItems;
     QuestItemMap PlayerFFAItems;
     QuestItemMap PlayerNonQuestNonFFAConditionalItems;
+
+    // "Loot for everyone" state, see IsEveryoneLoot()
+    bool lootEveryone{false};
+    GuidSet everyoneParticipants;           // players that got their own copy of the loot (see FillNotNormalLootFor)
+    GuidSet everyoneGoldLooted;             // players that already took their copy of the gold
+    GuidSet everyoneReleased;               // bots that closed the loot again (they only take what their loot strategy wants)
 
     // All rolls are registered here. They need to know, when the loot is not valid anymore
     LootValidatorRefMgr i_LootValidatorRefMgr;

@@ -2158,7 +2158,7 @@ Creature* Player::GetNPCIfCanInteractWith(ObjectGuid const& guid, uint32 npcflag
     //                return nullptr;
 
     // not too far
-    if (!creature->IsWithinDistInMap(this, INTERACTION_DISTANCE))
+    if (!creature->IsWithinDistInMap(this, GetConfiguredInteractionDistance()))
         return nullptr;
 
     return creature;
@@ -8086,7 +8086,8 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
             else if (loot_type == LOOT_FISHING_JUNK)
                 go->GetFishLoot(loot, this, true);
 
-            if (go->GetGOInfo()->type == GAMEOBJECT_TYPE_CHEST && go->GetGOInfo()->chest.groupLootRules)
+            // "Loot for everyone" loot is never rolled for or assigned by a master looter
+            if (go->GetGOInfo()->type == GAMEOBJECT_TYPE_CHEST && go->GetGOInfo()->chest.groupLootRules && !loot->IsEveryoneLoot())
             {
                 if (Group* group = GetGroup())
                 {
@@ -8130,6 +8131,10 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
                         permission = GROUP_PERMISSION;
                         break;
                 }
+
+                // "Loot for everyone": everybody that may loot the object looks at his own copy of the loot
+                if (loot->IsEveryoneLoot())
+                    permission = go->IsLootAllowedFor(this) ? ALL_PERMISSION : NONE_PERMISSION;
             }
             else
                 permission = ALL_PERMISSION;
@@ -8214,7 +8219,7 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
         Creature* creature = GetMap()->GetCreature(guid);
 
         // must be in range and creature must be alive for pickpocket and must be dead for another loot
-        if (!creature || creature->IsAlive() != (loot_type == LOOT_PICKPOCKETING) || !creature->IsWithinDistInMap(this, INTERACTION_DISTANCE))
+        if (!creature || creature->IsAlive() != (loot_type == LOOT_PICKPOCKETING) || !creature->IsWithinDistInMap(this, GetConfiguredInteractionDistance()))
         {
             SendLootRelease(guid);
             return;
@@ -8272,7 +8277,8 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
             if (loot->loot_type == LOOT_NONE)
             {
                 // for creature, loot is filled when creature is killed.
-                if (recipientGroup)
+                // "Loot for everyone" loot is never rolled for or assigned by a master looter
+                if (recipientGroup && !loot->IsEveryoneLoot())
                 {
                     switch (recipientGroup->GetLootMethod())
                     {
@@ -8335,6 +8341,10 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
                                 permission = GROUP_PERMISSION;
                                 break;
                         }
+
+                        // "Loot for everyone": every member of the tapping group looks at his own copy of the loot
+                        if (loot->IsEveryoneLoot())
+                            permission = ALL_PERMISSION;
                     }
                     else
                         permission = NONE_PERMISSION;
@@ -8375,6 +8385,11 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
     if (permission != NONE_PERMISSION)
     {
         SetLootGUID(guid);
+
+        // "Loot for everyone": players that were not in range when the loot was generated get their own copy now
+        // (does nothing for players that already have one)
+        if (loot->IsEveryoneLoot())
+            loot->FillNotNormalLootFor(this);
 
         sScriptMgr->OnPlayerBeforeSendLoot(this, guid, loot);
 

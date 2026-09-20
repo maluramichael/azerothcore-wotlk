@@ -366,7 +366,7 @@ void WorldSession::HandleGameobjectReportUse(WorldPacket& recvPacket)
     if (go->HasGameObjectFlag(GO_FLAG_NOT_SELECTABLE))
         return;
 
-    if (!go->IsWithinDistInMap(_player, INTERACTION_DISTANCE))
+    if (!go->IsWithinDistInMap(_player, GetConfiguredInteractionDistance()))
         return;
 
     if (go->AI()->GossipHello(_player, true))

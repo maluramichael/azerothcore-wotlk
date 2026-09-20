@@ -1934,9 +1934,12 @@ void Group::SendUpdateToPlayer(ObjectGuid playerGUID, MemberSlot* slot)
 
     if (GetMembersCount() - 1)
     {
-        data << uint8(m_lootMethod);                    // loot method
+        // "Loot for everyone" ignores the loot method (everybody gets everything): show it as free for all
+        LootMethod const shownLootMethod = sWorld->getBoolConfig(CONFIG_LOOT_EVERYONE) ? FREE_FOR_ALL : m_lootMethod;
 
-        if (m_lootMethod == MASTER_LOOT)
+        data << uint8(shownLootMethod);                 // loot method
+
+        if (shownLootMethod == MASTER_LOOT)
             data << m_masterLooterGuid;                 // master looter guid
         else
             data << uint64(0);                          // looter guid

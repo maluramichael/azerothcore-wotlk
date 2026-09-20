@@ -2897,6 +2897,11 @@ void GameObject::SetPosition(float x, float y, float z, float o)
 
 float GameObject::GetInteractionDistance() const
 {
+    // Configurable interaction range (worldserver.conf "Interaction.Distance"): raises the per-type values below,
+    // never lowers them. Chairs (the player is moved onto the seat), fishing nodes/holes and area-damage objects keep
+    // their fixed values.
+    float const configured = GetConfiguredInteractionDistance();
+
     switch (GetGoType())
     {
         case GAMEOBJECT_TYPE_AREADAMAGE:
@@ -2906,9 +2911,9 @@ float GameObject::GetInteractionDistance() const
         case GAMEOBJECT_TYPE_FLAGSTAND:
         case GAMEOBJECT_TYPE_FLAGDROP:
         case GAMEOBJECT_TYPE_MINI_GAME:
-            return 5.5555553f;
+            return std::max(5.5555553f, configured);
         case GAMEOBJECT_TYPE_BINDER:
-            return 10.0f;
+            return std::max(10.0f, configured);
         case GAMEOBJECT_TYPE_CHAIR:
         case GAMEOBJECT_TYPE_BARBER_CHAIR:
             return 3.0f;
@@ -2921,15 +2926,15 @@ float GameObject::GetInteractionDistance() const
         case GAMEOBJECT_TYPE_DUNGEON_DIFFICULTY:
         case GAMEOBJECT_TYPE_DESTRUCTIBLE_BUILDING:
         case GAMEOBJECT_TYPE_DOOR:
-            return 5.0f;
+            return std::max(5.0f, configured);
         // Following values are not blizzlike
         case GAMEOBJECT_TYPE_GUILD_BANK:
         case GAMEOBJECT_TYPE_MAILBOX:
             // Successful mailbox interaction is rather critical to the client, failing it will start a minute-long cooldown until the next mail query may be executed.
             // And since movement info update is not sent with mailbox interaction query, server may find the player outside of interaction range. Thus we increase it.
-            return 10.0f; // 5.0f is blizzlike
+            return std::max(10.0f, configured); // 5.0f is blizzlike
         default:
-            return INTERACTION_DISTANCE;
+            return configured; // >= INTERACTION_DISTANCE
     }
 }
 
@@ -2998,6 +3003,11 @@ bool GameObject::IsAtInteractDistance(Player const* player, SpellInfo const* spe
 
         if (sGameObjectDisplayInfoStore.LookupEntry(GetGOInfo()->displayId))
         {
+            // Lock spells (mining, herbalism, opening, ...) normally have a 5 yard range; honour Interaction.Distance as well.
+            // Fishing holes keep the spell range (fishing is a 20+ yard cast on the hole).
+            if (GetGoType() != GAMEOBJECT_TYPE_FISHINGHOLE)
+                maxRange = std::max(maxRange, GetConfiguredInteractionDistance());
+
             return IsAtInteractDistance(*player, maxRange);
         }
     }

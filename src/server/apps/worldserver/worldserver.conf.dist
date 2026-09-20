@@ -2880,6 +2880,22 @@ Rate.Drop.Item.GroupAmount = 1
 LootNeedBeforeGreedILvlRestriction = 70
 
 #
+#    Loot.Everyone.Enable
+#        Description: "Loot for everyone". Group loot of creature corpses (and of chests that use group loot rules)
+#                     is duplicated for every group member: no round robin, need/greed, group loot or master loot
+#                     rules and no roll windows. Every eligible member of the group (in range of the corpse when it
+#                     died, or when he opens it) can take EVERY item and the full gold amount, taking an item does
+#                     not remove it for the others (each looter receives a newly created item).
+#                     The corpse stays lootable until every member that is still alive and online took his copy,
+#                     or until it decays. The group's loot method setting is ignored for this loot.
+#                     Personal loot (skinning, pickpocketing, gathering, fishing, item containers) and the loot of
+#                     a lone player are not changed.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled, regular loot method rules)
+
+Loot.Everyone.Enable = 1
+
+#
 #    Item.SetItemTradeable
 #        Description: Enabled/Disabled trading BoP items among raid members.
 #        Default:     1 - (Set BoP items tradeable timer to 2 hours)
@@ -3127,6 +3143,21 @@ Rate.Creature.Elite.Elite.HP     = 1
 Rate.Creature.Elite.RARE.HP      = 1
 Rate.Creature.Elite.RAREELITE.HP = 1
 Rate.Creature.Elite.WORLDBOSS.HP = 1
+
+#
+#    Interaction.Distance
+#        Description: Maximum distance (yards, measured between the model bounds) at which a player may
+#                     interact with NPCs (gossip, quests, vendors, trainers, bankers, auctioneers, ...),
+#                     use gameobjects (chests, mailboxes, doors, herb/ore nodes via their lock spell, ...)
+#                     and loot corpses. Values below 5.5 are ignored (5.5 is the blizzlike minimum).
+#                     No line-of-sight check is performed by these interaction checks.
+#                     Chairs, fishing nodes/holes and area-damage objects are not affected.
+#                     NOTE: the stock 3.3.5a client enforces its own (5 yard) range and auto-runs to the
+#                     target unless a client-side mod (e.g. wxl-interact-range) raises it as well.
+#        Default:     5.5 (blizzlike)
+#                     30  (recommended for a solo/bot server)
+
+Interaction.Distance = 5.5
 
 #
 #    ListenRange.Say

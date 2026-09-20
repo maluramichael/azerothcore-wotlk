@@ -1377,6 +1377,14 @@ bool WorldObject::IsWithinSightRange(Position const& pos, float dist) const
     return IsInDist2d(&pos, dist + GetObjectSize());
 }
 
+// Effective interaction distance (NPC gossip/vendor/trainer/..., gameobject use, loot): never lower than the
+// blizzlike INTERACTION_DISTANCE, raised by worldserver.conf "Interaction.Distance". No LOS is involved in these checks.
+float GetConfiguredInteractionDistance()
+{
+    float const configured = sWorld->getFloatConfig(CONFIG_INTERACTION_DISTANCE);
+    return configured > INTERACTION_DISTANCE ? configured : INTERACTION_DISTANCE;
+}
+
 // use only if you will sure about placing both object at same map
 bool WorldObject::IsWithinDist(WorldObject const* obj, float dist2compare, bool is3D, bool incOwnRadius, bool incTargetRadius) const
 {

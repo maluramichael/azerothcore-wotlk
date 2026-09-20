@@ -13632,6 +13632,9 @@ void Unit::Kill(Unit* killer, Unit* victim, bool durabilityLoss, WeaponAttackTyp
             if (creature->GetLootMode())
                 loot->generateMoneyLoot(creature->GetCreatureTemplate()->mingold, creature->GetCreatureTemplate()->maxgold);
 
+            // "Loot for everyone": also covers corpses that only carry gold (no loot template to fill)
+            loot->PrepareEveryoneLoot(looter, creature);
+
             if (group)
             {
                 if (hasLooterGuid)

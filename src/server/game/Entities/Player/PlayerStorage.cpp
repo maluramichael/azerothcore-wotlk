@@ -5780,6 +5780,13 @@ bool Player::isAllowedToLoot(Creature const* creature)
     if (loot->isLooted()) // nothing to loot or everything looted.
         return false;
 
+    // "Loot for everyone": every member of the tapping group has an own copy of the loot
+    if (loot->IsEveryoneLoot())
+    {
+        Group* everyoneGroup = GetGroup();
+        return everyoneGroup && everyoneGroup == creature->GetLootRecipientGroup() && loot->HasEveryoneLootFor(this);
+    }
+
     if (!loot->hasItemForAll() && !loot->hasItemFor(this)) // no loot in creature for this player
         return false;
 

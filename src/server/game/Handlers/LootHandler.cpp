@@ -92,7 +92,7 @@ void WorldSession::HandleAutostoreLootItemOpcode(WorldPacket& recvData)
         Creature* creature = GetPlayer()->GetMap()->GetCreature(lguid);
 
         bool lootAllowed = creature && creature->IsAlive() == (player->IsClass(CLASS_ROGUE, CLASS_CONTEXT_ABILITY) && creature->loot.loot_type == LOOT_PICKPOCKETING);
-        if (!lootAllowed || !creature->IsWithinDistInMap(_player, INTERACTION_DISTANCE))
+        if (!lootAllowed || !creature->IsWithinDistInMap(_player, GetConfiguredInteractionDistance()))
         {
             player->SendLootError(lguid, lootAllowed ? LOOT_ERROR_TOO_FAR : LOOT_ERROR_DIDNT_KILL);
             return;
@@ -149,7 +149,7 @@ void WorldSession::HandleLootMoneyOpcode(WorldPacket& /*recvData*/)
             {
                 Corpse* bones = ObjectAccessor::GetCorpse(*player, guid);
 
-                if (bones && bones->IsWithinDistInMap(player, INTERACTION_DISTANCE))
+                if (bones && bones->IsWithinDistInMap(player, GetConfiguredInteractionDistance()))
                 {
                     loot = &bones->loot;
                     shareMoney = false;
@@ -171,7 +171,7 @@ void WorldSession::HandleLootMoneyOpcode(WorldPacket& /*recvData*/)
             {
                 Creature* creature = player->GetMap()->GetCreature(guid);
                 bool lootAllowed = creature && creature->IsAlive() == (player->IsClass(CLASS_ROGUE, CLASS_CONTEXT_ABILITY) && creature->loot.loot_type == LOOT_PICKPOCKETING);
-                if (lootAllowed && creature->IsWithinDistInMap(player, INTERACTION_DISTANCE))
+                if (lootAllowed && creature->IsWithinDistInMap(player, GetConfiguredInteractionDistance()))
                 {
                     loot = &creature->loot;
                     if (creature->IsAlive())
@@ -193,6 +193,13 @@ void WorldSession::HandleLootMoneyOpcode(WorldPacket& /*recvData*/)
         if (player->HasPlayerFlag(PLAYER_FLAGS_NO_PLAY_TIME))
         {
             player->SendLootError(guid, LOOT_ERROR_PLAY_TIME_EXCEEDED);
+            return;
+        }
+
+        // "Loot for everyone": every eligible player takes a full copy of the gold, the others keep theirs
+        if (loot->IsEveryoneLoot())
+        {
+            loot->GiveEveryoneGold(player);
             return;
         }
 
@@ -348,6 +355,7 @@ void WorldSession::DoLootRelease(ObjectGuid lguid)
         }
 
         loot = &go->loot;
+        loot->OnEveryoneLootReleased(player);
 
         if (go->GetGoType() == GAMEOBJECT_TYPE_DOOR)
         {
@@ -394,7 +402,7 @@ void WorldSession::DoLootRelease(ObjectGuid lguid)
     else if (lguid.IsCorpse())        // ONLY remove insignia at BG
     {
         Corpse* corpse = ObjectAccessor::GetCorpse(*player, lguid);
-        if (!corpse || !corpse->IsWithinDistInMap(_player, INTERACTION_DISTANCE))
+        if (!corpse || !corpse->IsWithinDistInMap(_player, GetConfiguredInteractionDistance()))
             return;
 
         loot = &corpse->loot;
@@ -440,10 +448,11 @@ void WorldSession::DoLootRelease(ObjectGuid lguid)
         Creature* creature = GetPlayer()->GetMap()->GetCreature(lguid);
 
         bool lootAllowed = creature && creature->IsAlive() == (player->IsClass(CLASS_ROGUE, CLASS_CONTEXT_ABILITY) && creature->loot.loot_type == LOOT_PICKPOCKETING);
-        if (!lootAllowed || !creature->IsWithinDistInMap(_player, INTERACTION_DISTANCE))
+        if (!lootAllowed || !creature->IsWithinDistInMap(_player, GetConfiguredInteractionDistance()))
             return;
 
         loot = &creature->loot;
+        loot->OnEveryoneLootReleased(player);
         if (loot->isLooted())
         {
             // skip pickpocketing loot for speed, skinning timer reduction is no-op in fact

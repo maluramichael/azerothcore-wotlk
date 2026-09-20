@@ -23,6 +23,13 @@
 #define CONTACT_DISTANCE             0.5f
 #define INTERACTION_DISTANCE         5.5f
 #define ATTACK_DISTANCE              5.0f
+
+// Effective server-side interaction distance for NPCs / gameobjects / loot: max(INTERACTION_DISTANCE, Interaction.Distance).
+// INTERACTION_DISTANCE itself stays the blizzlike 5.5 constant (bots and scripts keep using it as a "how close to walk" value);
+// only the *acceptance* checks (Player::GetNPCIfCanInteractWith, GameObject::GetInteractionDistance, loot handlers, ...)
+// use this configurable value. Defined in Object.cpp.
+float GetConfiguredInteractionDistance();
+
 #define VISIBILITY_COMPENSATION      15.0f                  // increase searchers
 #define INSPECT_DISTANCE             28.0f
 #define SPELL_SEARCHER_COMPENSATION  30.0f                  // increase searchers size in case we have large npc near cell border

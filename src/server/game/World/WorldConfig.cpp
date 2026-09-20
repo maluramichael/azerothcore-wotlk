@@ -187,6 +187,9 @@ void WorldConfig::BuildConfigCache()
 
     SetConfigValue<float>(CONFIG_SIGHT_MONSTER, "MonsterSight", 50.0f);
 
+    // 5.5 = blizzlike (INTERACTION_DISTANCE). Values below 5.5 are treated as 5.5 by GetConfiguredInteractionDistance().
+    SetConfigValue<float>(CONFIG_INTERACTION_DISTANCE, "Interaction.Distance", 5.5f);
+
     SetConfigValue<uint32>(CONFIG_GAME_TYPE, "GameType", 0, ConfigValueCache::Reloadable::No);
     SetConfigValue<uint32>(CONFIG_REALM_ZONE, "RealmZone", REALM_ZONE_DEVELOPMENT, ConfigValueCache::Reloadable::No);
 
@@ -515,6 +518,8 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<float>(CONFIG_OUTDOOR_PVP_CAPTURE_RATE, "OutdoorPvPCaptureRate", 1.0f);
 
     SetConfigValue<uint32>(CONFIG_LOOT_NEED_BEFORE_GREED_ILVL_RESTRICTION, "LootNeedBeforeGreedILvlRestriction", 70);
+
+    SetConfigValue<bool>(CONFIG_LOOT_EVERYONE, "Loot.Everyone.Enable", true);
 
     SetConfigValue<bool>(CONFIG_PLAYER_SETTINGS_ENABLED, "EnablePlayerSettings", 0);
 

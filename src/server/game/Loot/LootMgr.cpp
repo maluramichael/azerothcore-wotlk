@@ -29,6 +29,8 @@
 #include "SpellMgr.h"
 #include "Util.h"
 #include "World.h"
+#include "WorldPacket.h"
+#include "WorldSession.h"
 
 ServerConfigs const qualityToRate[] =
 {
@@ -495,6 +497,11 @@ void Loot::AddItem(LootStoreItem const& item)
         LootItem generatedLoot(item);
         generatedLoot.count = std::min(count, proto->GetMaxStackSize());
         generatedLoot.itemIndex = lootItems.size();
+
+        // "Loot for everyone": every item is a free-for-all item, each player owns a copy of it
+        if (lootEveryone)
+            generatedLoot.freeforall = true;
+
         lootItems.push_back(generatedLoot);
         count -= proto->GetMaxStackSize();
 
@@ -531,7 +538,7 @@ void Loot::AddItem(LootStoreItem const& item)
         // non-conditional one-player only items are counted here,
         // free for all items are counted in FillFFALoot(),
         // non-ffa conditionals are counted in FillNonQuestNonFFAConditionalLoot()
-        if (!item.needs_quest && item.conditions.empty() && !proto->HasFlag(ITEM_FLAG_MULTI_DROP))
+        if (!item.needs_quest && item.conditions.empty() && !generatedLoot.freeforall)
             ++unlootedCount;
     }
 }
@@ -544,6 +551,11 @@ bool Loot::FillLoot(uint32 lootId, LootStore const& store, Player* lootOwner, bo
         return false;
 
     lootOwnerGUID = lootOwner->GetGUID();
+
+    // "Loot for everyone": group loot (corpses, group loot rule chests) is duplicated for every eligible group member.
+    // Personal loot and lone players keep the regular loot rules.
+    if (!personal && lootOwner->GetGroup() && sWorld->getBoolConfig(CONFIG_LOOT_EVERYONE))
+        lootEveryone = true;
 
     LootTemplate const* tab = store.GetLootFor(lootId);
 
@@ -566,7 +578,31 @@ bool Loot::FillLoot(uint32 lootId, LootStore const& store, Player* lootOwner, bo
     Group* group = lootOwner->GetGroup();
     if (!personal && group)
     {
-        roundRobinPlayer = lootOwner->GetGUID();
+        if (lootEveryone)
+        {
+            // Loot that is filled again (some boss scripts add the loot of other creatures) needs new copies:
+            // the free-for-all lists of the players are built from the items that exist right now
+            if (!everyoneParticipants.empty())
+            {
+                for (auto const& itr : PlayerQuestItems)
+                    delete itr.second;
+                PlayerQuestItems.clear();
+
+                for (auto const& itr : PlayerFFAItems)
+                    delete itr.second;
+                PlayerFFAItems.clear();
+
+                for (auto const& itr : PlayerNonQuestNonFFAConditionalItems)
+                    delete itr.second;
+                PlayerNonQuestNonFFAConditionalItems.clear();
+
+                everyoneParticipants.clear();
+            }
+        }
+        else
+        {
+            roundRobinPlayer = lootOwner->GetGUID();
+        }
 
         for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
@@ -596,6 +632,10 @@ bool Loot::FillLoot(uint32 lootId, LootStore const& store, Player* lootOwner, bo
 void Loot::FillNotNormalLootFor(Player* player)
 {
     ObjectGuid playerGuid = player->GetGUID();
+
+    // "Loot for everyone": every player gets his own copy exactly once
+    if (lootEveryone && !everyoneParticipants.insert(playerGuid).second)
+        return;
 
     QuestItemMap::const_iterator qmapitr = PlayerQuestItems.find(playerGuid);
     if (qmapitr == PlayerQuestItems.end())
@@ -660,7 +700,7 @@ QuestItemList* Loot::FillQuestLoot(Player* player)
 
     QuestItemList* ql = new QuestItemList();
 
-    bool isMasterLooter = player->GetGroup() && player->GetGroup()->GetLootMethod() == MASTER_LOOT && player->GetGroup()->GetMasterLooterGuid() == player->GetGUID();
+    bool isMasterLooter = !lootEveryone && player->GetGroup() && player->GetGroup()->GetLootMethod() == MASTER_LOOT && player->GetGroup()->GetMasterLooterGuid() == player->GetGUID();
 
     for (uint8 i = 0; i < quest_items.size(); ++i)
     {
@@ -904,7 +944,7 @@ bool Loot::hasItemForAll() const
 }
 
 // return true if there is any FFA, quest or conditional item for the player.
-bool Loot::hasItemFor(Player* player) const
+bool Loot::hasItemFor(Player const* player) const
 {
     QuestItemMap const& lootPlayerQuestItems = GetPlayerQuestItems();
     QuestItemMap::const_iterator q_itr = lootPlayerQuestItems.find(player->GetGUID());
@@ -960,6 +1000,162 @@ bool Loot::hasOverThresholdItem() const
     return false;
 }
 
+//
+// --------- Loot for everyone ---------
+//
+
+void Loot::PrepareEveryoneLoot(Player* lootOwner, WorldObject* lootSource)
+{
+    if (!lootOwner || !sWorld->getBoolConfig(CONFIG_LOOT_EVERYONE))
+        return;
+
+    // a lone player simply uses the regular loot rules
+    Group* group = lootOwner->GetGroup();
+    if (!group)
+        return;
+
+    lootEveryone = true;
+
+    for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+        if (Player* player = itr->GetSource())
+            if (player->IsAtLootRewardDistance(lootSource ? lootSource : lootOwner))
+                FillNotNormalLootFor(player);
+}
+
+uint32 Loot::GetGoldFor(Player const* player) const
+{
+    if (lootEveryone && everyoneGoldLooted.find(player->GetGUID()) != everyoneGoldLooted.end())
+        return 0;
+
+    return gold;
+}
+
+void Loot::GiveEveryoneGold(Player* player)
+{
+    ObjectGuid const playerGuid = player->GetGUID();
+
+    // a player with a play time restriction gets nothing (the loot handler reports the error)
+    if (player->HasPlayerFlag(PLAYER_FLAGS_NO_PLAY_TIME))
+        return;
+
+    if (!gold || everyoneGoldLooted.find(playerGuid) != everyoneGoldLooted.end())
+    {
+        player->SendNotifyLootMoneyRemoved();
+        return;
+    }
+
+    // the copy is taken first: nobody can take it twice, not even if a script reenters the loot
+    everyoneGoldLooted.insert(playerGuid);
+
+    // scripts (shared gold, autobalance, ...) work on 'gold' and may pay out or change it: let them do that for this
+    // looter only, the other players still find the original amount in their copy
+    uint32 const sharedGold = gold;
+    sScriptMgr->OnPlayerBeforeLootMoney(player, this);
+    uint32 finalGold = gold;
+    gold = sharedGold;
+
+    player->SendNotifyLootMoneyRemoved();
+
+    bool award = finalGold != 0;
+    if (player->HasPlayerFlag(PLAYER_FLAGS_PARTIAL_PLAY_TIME))
+    {
+        finalGold /= 2;
+
+        // a halved amount that rounds down to nothing is not worth announcing
+        award = finalGold != 0;
+    }
+
+    sScriptMgr->OnPlayerAfterCreatureLootMoney(player);
+
+    if (award)
+    {
+        player->ModifyMoney(finalGold);
+        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_LOOT_MONEY, finalGold);
+
+        WorldPacket data(SMSG_LOOT_MONEY_NOTIFY, 4 + 1);
+        data << uint32(finalGold);
+        data << uint8(1);   // "You loot..."
+        player->SendDirectMessage(&data);
+    }
+
+    sScriptMgr->OnLootMoney(player, sharedGold);
+}
+
+bool Loot::HasEveryoneLootFor(Player const* player) const
+{
+    ObjectGuid const playerGuid = player->GetGUID();
+
+    // players that were out of range when the loot was generated get their copy when they open the loot
+    if (everyoneParticipants.find(playerGuid) == everyoneParticipants.end())
+        return true;
+
+    // a bot that closed its loot window is done with its copy
+    if (everyoneReleased.find(playerGuid) != everyoneReleased.end())
+        return false;
+
+    if (gold && everyoneGoldLooted.find(playerGuid) == everyoneGoldLooted.end())
+        return true;
+
+    return hasItemFor(player);
+}
+
+void Loot::OnEveryoneLootReleased(Player const* player)
+{
+    if (!lootEveryone)
+        return;
+
+    WorldSession const* session = player->GetSession();
+    if (session && session->IsBot())
+        everyoneReleased.insert(player->GetGUID());
+}
+
+bool Loot::IsEveryoneLooted() const
+{
+    bool anyLooter = false;
+    for (ObjectGuid const& guid : everyoneParticipants)
+    {
+        // players that are gone or dead cannot loot (anymore): they do not keep the corpse alive
+        Player* player = ObjectAccessor::FindPlayer(guid);
+        if (!player || !player->IsAlive())
+            continue;
+
+        anyLooter = true;
+        if (HasEveryoneLootFor(player))
+            return false;
+    }
+
+    if (anyLooter)
+        return true;
+
+    // nobody could loot right now (or nobody got a copy at all): stay on the safe side and keep everything
+    // that was not taken yet, the corpse decay timer removes the loot in the end
+    return gold == 0 && unlootedCount == 0;
+}
+
+void Loot::GetLootSlotsFor(Player const* player, std::vector<uint8>& slots) const
+{
+    ObjectGuid const playerGuid = player->GetGUID();
+
+    // free-for-all items are shown at the position they have in the items list
+    QuestItemMap::const_iterator ffaItr = PlayerFFAItems.find(playerGuid);
+    if (ffaItr != PlayerFFAItems.end() && ffaItr->second)
+    {
+        for (QuestItem const& ffaItem : *ffaItr->second)
+            if (!ffaItem.is_looted && ffaItem.index < items.size() && !items[ffaItem.index].is_looted)
+                slots.push_back(ffaItem.index);
+    }
+
+    // quest items are shown behind the normal items, in the order of the player's quest item list
+    QuestItemMap::const_iterator questItr = PlayerQuestItems.find(playerGuid);
+    if (questItr != PlayerQuestItems.end() && questItr->second)
+    {
+        QuestItemList const& questList = *questItr->second;
+        for (size_t i = 0; i < questList.size(); ++i)
+            if (!questList[i].is_looted && questList[i].index < quest_items.size() && !quest_items[questList[i].index].is_looted)
+                slots.push_back(uint8(items.size() + i));
+    }
+}
+
 ByteBuffer& operator<<(ByteBuffer& b, LootItem const& li)
 {
     b << uint32(li.itemid);
@@ -984,7 +1180,7 @@ ByteBuffer& operator<<(ByteBuffer& b, LootView const& lv)
 
     uint8 itemsShown = 0;
 
-    b << uint32(l.gold);                                    //gold
+    b << uint32(l.GetGoldFor(lv.viewer));                   //gold (everyone loot: 0 once the viewer took his copy)
 
     std::size_t count_pos = b.wpos();                            // pos of item count byte
     b << uint8(0);                                          // item count placeholder

@@ -7337,6 +7337,10 @@ SpellCastResult Spell::CheckRange(bool strict)
     if (Player* modOwner = m_caster->GetSpellModOwner())
         modOwner->ApplySpellMod(m_spellInfo->Id, SPELLMOD_RANGE, max_range, this);
 
+    // Skinning is a "loot" style interaction (5 yard spell range): honour Interaction.Distance like corpse looting does.
+    if (m_caster->IsPlayer() && m_spellInfo->HasEffect(SPELL_EFFECT_SKINNING))
+        max_range = std::max(max_range, GetConfiguredInteractionDistance());
+
     // xinef: dont check max_range to strictly after cast
     if (range_type != SPELL_RANGE_MELEE && !strict)
         max_range += std::min(3.0f, max_range * 0.1f); // 10% but no more than 3yd
