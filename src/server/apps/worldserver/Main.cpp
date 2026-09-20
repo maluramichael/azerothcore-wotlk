@@ -210,7 +210,13 @@ int main(int argc, char** argv)
     if (!sToCloud9Sidecar->CheckLibsidecarAbi())
         return 1;
 
-    OpenSSLCrypto::threadsSetup();
+    // The legacy provider (RC4) is mandatory for client connections: fail here with a clear message
+    // instead of asserting later in Acore::Crypto::ARC4::ARC4 when the first client connects.
+    if (!OpenSSLCrypto::threadsSetup())
+    {
+        LOG_ERROR("server.worldserver", "Refusing to start: OpenSSL legacy provider (RC4) is unavailable, game clients could not connect. See the OpenSSL errors above.");
+        return 1;
+    }
 
     std::shared_ptr<void> opensslHandle(nullptr, [](void*) { OpenSSLCrypto::threadsCleanup(); });
 

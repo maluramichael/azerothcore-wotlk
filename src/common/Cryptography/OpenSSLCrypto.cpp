@@ -16,8 +16,11 @@
  */
 
 #include "OpenSSLCrypto.h"
+#include "Log.h"
 #include <openssl/crypto.h> // NOTE: this import is NEEDED (even though some IDEs report it as unused)
+#include <openssl/err.h>
 #include <openssl/provider.h>
+#include <string>
 
 OSSL_PROVIDER* LegacyProvider;
 OSSL_PROVIDER* DefaultProvider;
@@ -25,6 +28,7 @@ OSSL_PROVIDER* DefaultProvider;
 #if AC_PLATFORM == AC_PLATFORM_WINDOWS
 #include <boost/dll/runtime_symbol_info.hpp>
 #include <filesystem>
+#include <Windows.h>
 
 void SetupLibrariesForWindows()
 {
@@ -38,13 +42,38 @@ void SetupLibrariesForWindows()
 }
 #endif
 
-void OpenSSLCrypto::threadsSetup()
+bool OpenSSLCrypto::threadsSetup()
 {
 #if AC_PLATFORM == AC_PLATFORM_WINDOWS
     SetupLibrariesForWindows();
 #endif
     LegacyProvider = OSSL_PROVIDER_load(nullptr, "legacy");
     DefaultProvider = OSSL_PROVIDER_load(nullptr, "default");
+
+    if (LegacyProvider && DefaultProvider)
+        return true;
+
+    // Without the legacy provider RC4 (client<->world packet encryption) is unavailable and the first client
+    // connection would die later in Acore::Crypto::ARC4::ARC4, so report the reason loudly here.
+    // On Windows legacy.dll imports libcrypto-3-x64.dll, which is resolved by *name* through the normal DLL search
+    // order (exe dir, System32, PATH). If another libcrypto-3-x64.dll of a different OpenSSL version is found first
+    // (Git, MySQL, poppler, ... on PATH) legacy.dll cannot be loaded.
+    char errBuf[256] = {};
+    ERR_error_string_n(ERR_peek_last_error(), errBuf, sizeof(errBuf));
+
+    LOG_ERROR("server", "OpenSSL: failed to load the '{}' provider (needed for RC4 / world client encryption). Runtime library: {}. OpenSSL error: {}",
+        LegacyProvider ? "default" : "legacy", OpenSSL_version(OPENSSL_VERSION), std::string(errBuf));
+
+#if AC_PLATFORM == AC_PLATFORM_WINDOWS
+    char libcryptoPath[MAX_PATH] = {};
+    if (HMODULE libcrypto = GetModuleHandleA("libcrypto-3-x64.dll"))
+        GetModuleFileNameA(libcrypto, libcryptoPath, MAX_PATH);
+
+    LOG_ERROR("server", "OpenSSL: libcrypto-3-x64.dll was loaded from '{}'. legacy.dll in the server directory must come from the SAME OpenSSL version - "
+        "copy the matching libcrypto-3-x64.dll and libssl-3-x64.dll next to the executable so they win the DLL search order.", std::string(libcryptoPath));
+#endif
+
+    return false;
 }
 
 void OpenSSLCrypto::threadsCleanup()

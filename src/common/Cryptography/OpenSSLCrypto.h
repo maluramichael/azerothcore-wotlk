@@ -27,7 +27,8 @@
 namespace OpenSSLCrypto
 {
     /// Needs to be called before threads using openssl are spawned
-    AC_COMMON_API void threadsSetup();
+    /// Returns false (and logs why) if the "legacy" (RC4) or "default" provider could not be loaded
+    AC_COMMON_API bool threadsSetup();
 
     /// Needs to be called after threads using openssl are despawned
     AC_COMMON_API void threadsCleanup();
